@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lux Storybook Reader</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#6200EE">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <!-- Tesseract.js for OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>Storybook Reader</h1>
+            <button id="about-btn" aria-label="About">
+                <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M11 9h2V7h-2v2m1 11c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-18c-5.52 0-10 4.48-10 10s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2m-1 15h2v-6h-2v6z"/></svg>
+            </button>
+        </header>
+
+        <main>
+            <div id="camera-container">
+                <video id="video" autoplay playsinline></video>
+                <canvas id="canvas" style="display:none;"></canvas>
+                <div id="scan-overlay">
+                    <div class="corner top-left"></div>
+                    <div class="corner top-right"></div>
+                    <div class="corner bottom-left"></div>
+                    <div class="corner bottom-right"></div>
+                </div>
+            </div>
+
+            <div id="controls">
+                <button id="scan-btn" class="fab">
+                    <span id="scan-icon">
+                        <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                    </span>
+                    <span id="loading-spinner" class="hidden"></span>
+                    <span id="scan-text">Scan Page</span>
+                </button>
+            </div>
+        </main>
+
+        <!-- Bottom Sheet for Results -->
+        <div id="bottom-sheet" class="hidden">
+            <div class="sheet-content">
+                <div class="sheet-header">
+                    <h2>Extracted Text</h2>
+                    <button id="close-sheet">
+                        <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                    </button>
+                </div>
+                <textarea id="extracted-text" placeholder="Luxembourgish text will appear here..."></textarea>
+                <button id="speak-btn">
+                    <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                    Read Aloud
+                </button>
+            </div>
+        </div>
+
+        <!-- About Dialog -->
+        <div id="about-dialog" class="modal hidden">
+            <div class="modal-content">
+                <h2>About Storybook Reader</h2>
+                <p>A simple app to help children read Luxembourgish storybooks.</p>
+                <p class="attribution">Powered by <strong>Sproochmaschinn.lu</strong></p>
+                <p class="sub-attribution">A service by the Zenter fir d’Lëtzebuerger Sprooch (ZLS).</p>
+                <button id="close-about">Close</button>
+            </div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
