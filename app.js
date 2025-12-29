@@ -1,7 +1,8 @@
 const API_BASE = "https://sproochmaschinn.lu";
+const CORS_PROXY = "https://corsproxy.io/?";
 
 let sessionId = null;
-let currentRequestId = null;
+let worker = null;
 
 // DOM Elements
 const video = document.getElementById('video');
@@ -32,26 +33,35 @@ async function initCamera() {
     }
 }
 
-// 2. OCR with Tesseract.js
+// 2. OCR Optimization
+async function getWorker() {
+    if (worker) return worker;
+    worker = await Tesseract.createWorker('deu+fra', 1, {
+        logger: m => console.log(m),
+    });
+    return worker;
+}
+
 async function performOCR() {
-    // Capture frame
+    // Capture and Preprocess frame
     const context = canvas.getContext('2d');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+
+    // Resize for speed (max 1000px width)
+    const scale = Math.min(1, 1000 / video.videoWidth);
+    canvas.width = video.videoWidth * scale;
+    canvas.height = video.videoHeight * scale;
+
+    // Draw and convert to Grayscale
+    context.filter = 'grayscale(100%) contrast(120%)';
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    const imageData = canvas.toDataURL('image/jpeg');
+    const imageData = canvas.toDataURL('image/jpeg', 0.8);
 
-    // Show loading state
     setLoading(true);
 
     try {
-        // Tesseract.js OCR
-        // Note: Using 'deu' or 'fra' as fallback for Lux if 'ltz' isn't available, 
-        // but Tesseract 5 supports many languages.
-        const result = await Tesseract.recognize(imageData, 'deu+fra', {
-            logger: m => console.log(m)
-        });
+        const tWorker = await getWorker();
+        const result = await tWorker.recognize(imageData);
 
         extractedTextArea.value = result.data.text;
         bottomSheet.classList.remove('hidden');
@@ -63,11 +73,12 @@ async function performOCR() {
     }
 }
 
-// 3. TTS with Sproochmaschinn API
+// 3. TTS with CORS Proxy
 async function getSession() {
     if (sessionId) return sessionId;
 
-    const resp = await fetch(`${API_BASE}/api/session`, { method: 'POST' });
+    const url = `${CORS_PROXY}${encodeURIComponent(API_BASE + "/api/session")}`;
+    const resp = await fetch(url, { method: 'POST' });
     const data = await resp.json();
     sessionId = data.session_id;
     return sessionId;
@@ -83,8 +94,9 @@ async function speakText() {
     try {
         const sid = await getSession();
 
-        // Request TTS
-        const ttsResp = await fetch(`${API_BASE}/api/tts/${sid}`, {
+        // Request TTS via Proxy
+        const ttsUrl = `${CORS_PROXY}${encodeURIComponent(API_BASE + "/api/tts/" + sid)}`;
+        const ttsResp = await fetch(ttsUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: text, model: 'claude' })
@@ -92,10 +104,11 @@ async function speakText() {
         const ttsData = await ttsResp.json();
         const requestId = ttsData.request_id;
 
-        // Poll for result
+        // Poll for result via Proxy
         let audioData = null;
         for (let i = 0; i < 30; i++) {
-            const resResp = await fetch(`${API_BASE}/api/result/${requestId}`);
+            const resUrl = `${CORS_PROXY}${encodeURIComponent(API_BASE + "/api/result/" + requestId)}`;
+            const resResp = await fetch(resUrl);
             const resData = await resResp.json();
 
             if (resData.status === 'completed') {
@@ -112,7 +125,7 @@ async function speakText() {
         }
     } catch (err) {
         console.error("TTS Error:", err);
-        alert("Failed to generate speech.");
+        alert("Failed to generate speech. (CORS or API issue)");
     } finally {
         speakBtn.disabled = false;
         speakBtn.innerHTML = `<svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg> Read Aloud`;
@@ -149,6 +162,7 @@ closeAboutBtn.addEventListener('click', () => aboutDialog.classList.add('hidden'
 
 // Start app
 initCamera();
+getWorker(); // Pre-warm worker
 getSession(); // Warm up session
 
 // Register Service Worker
