@@ -19,6 +19,33 @@ const aboutBtn = document.getElementById('about-btn');
 const aboutDialog = document.getElementById('about-dialog');
 const closeAboutBtn = document.getElementById('close-about');
 
+// Log Panel Elements
+const logPanel = document.getElementById('log-panel');
+const logHeader = document.getElementById('log-header');
+const logContent = document.getElementById('log-content');
+const toggleLogsBtn = document.getElementById('toggle-logs');
+
+// 0. Logger Utility
+const Logger = {
+    log: (msg, type = 'info') => {
+        const entry = document.createElement('div');
+        entry.className = `log-entry log-${type}`;
+        const time = new Date().toLocaleTimeString();
+        entry.textContent = `[${time}] ${msg}`;
+        logContent.appendChild(entry);
+        logContent.scrollTop = logContent.scrollHeight;
+        console.log(`[${type}] ${msg}`);
+    },
+    info: (msg) => Logger.log(msg, 'info'),
+    warn: (msg) => Logger.log(msg, 'warn'),
+    error: (msg) => Logger.log(msg, 'error')
+};
+
+// Redirect console errors to UI
+window.onerror = (msg, url, line) => {
+    Logger.error(`Global Error: ${msg} at ${line}`);
+};
+
 // 1. Initialize Camera
 async function initCamera() {
     try {
@@ -36,9 +63,15 @@ async function initCamera() {
 // 2. OCR Optimization
 async function getWorker() {
     if (worker) return worker;
+    Logger.info("Initializing Tesseract worker...");
     worker = await Tesseract.createWorker('deu+fra', 1, {
-        logger: m => console.log(m),
+        logger: m => {
+            if (m.status === 'recognizing text') {
+                Logger.info(`OCR Progress: ${Math.round(m.progress * 100)}%`);
+            }
+        },
     });
+    Logger.info("Worker ready.");
     return worker;
 }
 
@@ -60,13 +93,16 @@ async function performOCR() {
     setLoading(true);
 
     try {
+        Logger.info("Starting OCR process...");
         const tWorker = await getWorker();
+        Logger.info("Worker acquired, starting recognition...");
         const result = await tWorker.recognize(imageData);
 
+        Logger.info(`OCR Complete. Found ${result.data.text.length} characters.`);
         extractedTextArea.value = result.data.text;
         bottomSheet.classList.remove('hidden');
     } catch (err) {
-        console.error("OCR Error:", err);
+        Logger.error(`OCR Failed: ${err.message}`);
         alert("Failed to recognize text. Please try again.");
     } finally {
         setLoading(false);
@@ -77,11 +113,21 @@ async function performOCR() {
 async function getSession() {
     if (sessionId) return sessionId;
 
+    Logger.info("Requesting new session from Sproochmaschinn...");
     const url = `${CORS_PROXY}${encodeURIComponent(API_BASE + "/api/session")}`;
-    const resp = await fetch(url, { method: 'POST' });
-    const data = await resp.json();
-    sessionId = data.session_id;
-    return sessionId;
+    Logger.info(`Fetch URL: ${url}`);
+
+    try {
+        const resp = await fetch(url, { method: 'POST' });
+        Logger.info(`Session Response Status: ${resp.status}`);
+        const data = await resp.json();
+        sessionId = data.session_id;
+        Logger.info(`Session created: ${sessionId}`);
+        return sessionId;
+    } catch (err) {
+        Logger.error(`Session creation failed: ${err.message}`);
+        throw err;
+    }
 }
 
 async function speakText() {
@@ -94,37 +140,51 @@ async function speakText() {
     try {
         const sid = await getSession();
 
+        Logger.info(`Requesting TTS for session ${sid}...`);
         // Request TTS via Proxy
         const ttsUrl = `${CORS_PROXY}${encodeURIComponent(API_BASE + "/api/tts/" + sid)}`;
+        Logger.info(`TTS Request URL: ${ttsUrl}`);
+
         const ttsResp = await fetch(ttsUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: text, model: 'claude' })
         });
+
+        Logger.info(`TTS Response Status: ${ttsResp.status}`);
         const ttsData = await ttsResp.json();
         const requestId = ttsData.request_id;
+        Logger.info(`TTS Request ID: ${requestId}`);
 
         // Poll for result via Proxy
         let audioData = null;
+        Logger.info("Starting result polling...");
         for (let i = 0; i < 30; i++) {
             const resUrl = `${CORS_PROXY}${encodeURIComponent(API_BASE + "/api/result/" + requestId)}`;
             const resResp = await fetch(resUrl);
             const resData = await resResp.json();
 
+            Logger.info(`Poll ${i + 1}: Status = ${resData.status}`);
+
             if (resData.status === 'completed') {
                 audioData = resData.result.data;
+                Logger.info("Audio data received successfully.");
                 break;
             } else if (resData.status === 'error') {
+                Logger.error("API returned error status during polling.");
                 throw new Error("API Error");
             }
             await new Promise(r => setTimeout(r, 1000));
         }
 
         if (audioData) {
+            Logger.info("Playing audio...");
             playAudio(audioData);
+        } else {
+            Logger.warn("Polling timed out or no audio data returned.");
         }
     } catch (err) {
-        console.error("TTS Error:", err);
+        Logger.error(`TTS Process Failed: ${err.message}`);
         alert("Failed to generate speech. (CORS or API issue)");
     } finally {
         speakBtn.disabled = false;
@@ -159,6 +219,12 @@ speakBtn.addEventListener('click', speakText);
 closeSheetBtn.addEventListener('click', () => bottomSheet.classList.add('hidden'));
 aboutBtn.addEventListener('click', () => aboutDialog.classList.remove('hidden'));
 closeAboutBtn.addEventListener('click', () => aboutDialog.classList.add('hidden'));
+
+// Log Panel Toggle
+logHeader.addEventListener('click', () => {
+    logPanel.classList.toggle('collapsed');
+    toggleLogsBtn.textContent = logPanel.classList.contains('collapsed') ? 'Show' : 'Hide';
+});
 
 // Start app
 initCamera();
